@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Monkeytype Clone</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f8f9fa;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 40px;
+    }
+    #words {
+      font-size: 24px;
+      line-height: 40px;
+      border: 2px dashed #aaa;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      min-height: 100px;
+      background: white;
+    }
+    #inputBox {
+      font-size: 22px;
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 2px solid #007bff;
+    }
+    #levelSelect {
+      width: 150px;
+    }
+    .progress {
+      height: 20px;
+      margin-top: 10px;
+    }
+    .timer {
+      font-size: 24px;
+      font-weight: bold;
+    }
+    #chart {
+      margin-top: 30px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container text-center">
+    <h1 class="mb-4">Monkeytype Clone 🐒</h1>
+
+    <div class="mb-3">
+      <select id="levelSelect" class="form-select d-inline w-auto">
+        <option value="easy">🟢 Easy</option>
+        <option value="medium">🟡 Medium</option>
+        <option value="hard">🔴 Hard</option>
+      </select>
+      <button id="startBtn" class="btn btn-primary ms-2">Start Test</button>
+    </div>
+
+    <div class="timer mb-3">
+      ⏱️ <span id="time">--</span> seconds left
+    </div>
+
+    <div id="words"></div>
+
+    <input type="text" id="inputBox" placeholder="Start typing here..." disabled>
+
+    <div class="progress">
+      <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+    </div>
+
+    <div id="accuracyDisplay" class="mt-2">Accuracy: 100%</div>
+    <div id="chart"></div>
+  </div>
+
+  <audio id="beep" src="{{ url_for('static', filename='audio/beep.mp3') }}"></audio>
+  <audio id="alarm" src="{{ url_for('static', filename='audio/alarm.mp3') }}"></audio>
+
+  <script>
+    let words = [], currentWordIndex = 0, typedWords = [], interval, countdown, timeLimit;
+    const timeDisplay = document.getElementById('time');
+    const startBtn = document.getElementById('startBtn');
+    const inputBox = document.getElementById('inputBox');
+    const wordsBox = document.getElementById('words');
+    const levelSelect = document.getElementById('levelSelect');
+    const beep = document.getElementById('beep');
+    const alarm = document.getElementById('alarm');
+    const progressBar = document.getElementById('progressBar');
+    const accuracyDisplay = document.getElementById('accuracyDisplay');
+
+    function getTimeByLevel(level) {
+      return { easy: 30, medium: 60, hard: 90 }[level];
+    }
+
+    async function loadWords(level) {
+      const res = await fetch(`/api/text?level=${level}`);
+      const data = await res.json();
+      words = data.text.trim().split(' ');
+      wordsBox.innerHTML = words.map(w => `<span>${w}</span>`).join(' ');
+    }
+
+    function updateWordsStyle() {
+      const spans = wordsBox.querySelectorAll('span');
+      spans.forEach((span, i) => {
+        span.className = '';
+        if (i < currentWordIndex) span.style.color = 'green';
+        else if (i === currentWordIndex) span.style.textDecoration = 'underline';
+        else span.style.color = '#000';
+      });
+    }
+
+    function startTest() {
+      typedWords = [];
+      currentWordIndex = 0;
+      progressBar.style.width = '0%';
+      const level = levelSelect.value;
+      timeLimit = getTimeByLevel(level);
+      timeDisplay.textContent = timeLimit;
+      inputBox.value = '';
+      inputBox.disabled = false;
+      inputBox.focus();
+      startBtn.textContent = 'Finish Test';
+      beep.play();
+
+      loadWords(level).then(() => {
+        updateWordsStyle();
+        clearInterval(countdown);
+        countdown = setInterval(() => {
+          timeLimit--;
+          timeDisplay.textContent = timeLimit;
+          if (timeLimit <= 0) endTest(true);
+        }, 1000);
+      });
+    }
+
+    function endTest(isTimeout = false) {
+      clearInterval(countdown);
+      inputBox.disabled = true;
+      startBtn.textContent = 'Start Test';
+      if (isTimeout) alarm.play();
+      else beep.play();
+
+      const correct = typedWords.filter((word, i) => word === words[i]).length;
+      const totalTyped = typedWords.length;
+      const accuracy = totalTyped === 0 ? 0 : Math.round((correct / totalTyped) * 100);
+      accuracyDisplay.textContent = `Accuracy: ${accuracy}%`;
+
+      showGraph(accuracy, correct, totalTyped - correct);
+    }
+
+    function showGraph(accuracy, correct, incorrect) {
+      Plotly.newPlot('chart', [{
+        values: [correct, incorrect],
+        labels: ['Correct', 'Incorrect'],
+        type: 'pie'
+      }], {
+        title: `Typing Accuracy: ${accuracy}%`
+      });
+    }
+
+    inputBox.addEventListener('keydown', (e) => {
+      if (e.key === ' ') {
+        e.preventDefault();
+        const word = inputBox.value.trim();
+        typedWords.push(word);
+        currentWordIndex++;
+        inputBox.value = '';
+        updateWordsStyle();
+        const percent = Math.min((currentWordIndex / words.length) * 100, 100);
+        progressBar.style.width = `${percent}%`;
+      }
+    });
+
+    startBtn.addEventListener('click', () => {
+      if (startBtn.textContent === 'Start Test') startTest();
+      else endTest();
+    });
+  </script>
+
+</body>
+</html>
